@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Incident Zero MCP Tool Registry",
+  "description": "Schema for registered MCP tools and their input/output contracts",
+  "type": "object",
+  "required": ["tools"],
+  "properties": {
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ToolDefinition"
+      }
+    }
+  },
+  "definitions": {
+    "ToolDefinition": {
+      "type": "object",
+      "required": ["name", "description", "input_schema", "output_signals"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique tool identifier (e.g., 'CodeScan', 'LogReasoner')"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this tool does"
+        },
+        "input_schema": {
+          "type": "object",
+          "description": "JSON schema for tool input parameters",
+          "required": ["required", "properties"],
+          "properties": {
+            "required": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "properties": {
+              "type": "object"
+            }
+          }
+        },
+        "output_signals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Signal keys this tool may produce for correlation"
+        }
+      }
+    },
+    "ToolResult": {
+      "type": "object",
+      "required": ["tool_name", "artifacts", "evidence", "signals"],
+      "properties": {
+        "tool_name": { "type": "string" },
+        "artifacts": { "type": "object" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Evidence" }
+        },
+        "signals": { "type": "object" },
+        "errors": {
+          "type": ["array", "null"],
+          "items": { "$ref": "#/definitions/ToolError" }
+        }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["code", "log", "runtime", "ocr", "image_text", "screenshot", "diagram", "other"]
+        },
+        "file_path": { "type": "string" },
+        "line": { "type": "integer" },
+        "snippet": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "ToolError": {
+      "type": "object",
+      "required": ["error"],
+      "properties": {
+        "error": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}

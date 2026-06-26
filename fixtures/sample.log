@@ -1,0 +1,14 @@
+2024-01-15 10:00:01 INFO  Application started on port 8080
+2024-01-15 10:00:02 INFO  Database connection established
+2024-01-15 10:01:15 ERROR Traceback (most recent call last): ValueError: invalid literal
+2024-01-15 10:02:30 WARN  Connection timed out to redis:6379
+2024-01-15 10:03:00 ERROR authentication failed for user admin from 192.168.1.50
+2024-01-15 10:03:01 ERROR authentication failed for user admin from 192.168.1.50
+2024-01-15 10:03:02 ERROR authentication failed for user admin from 192.168.1.50
+2024-01-15 10:03:05 WARN  too many failed login attempts from 192.168.1.50
+2024-01-15 10:04:00 ERROR SQL injection attempt detected: UNION SELECT * FROM passwords
+2024-01-15 10:05:00 WARN  SSL certificate verify error for api.example.com
+2024-01-15 10:06:00 ERROR MemoryError: Cannot allocate 2GB buffer
+2024-01-15 10:07:00 INFO  Health check passed
+2024-01-15 10:08:00 WARN  Path traversal attempt: ../../etc/passwd
+2024-01-15 10:09:00 INFO  Request completed in 250ms

@@ -1,0 +1,27 @@
+# Incident Zero — Frontend standalone container
+#
+# Used by docker-compose for separate frontend service.
+# For single-container deployment, use the main Dockerfile instead.
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install deps
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+# Copy source
+COPY frontend/ ./
+
+# Build
+RUN npm run build
+
+# Security: run as non-root
+RUN addgroup -g 1001 -S appuser && \
+    adduser -u 1001 -S appuser -G appuser
+USER appuser
+
+EXPOSE 3000
+
+CMD ["npm", "start"]

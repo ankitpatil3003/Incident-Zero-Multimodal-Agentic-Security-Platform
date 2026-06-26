@@ -1,0 +1,48 @@
+# Incident Zero — Docker Compose
+#
+# Usage:
+#   cp .env.example .env   # then fill in MISTRAL_API_KEY
+#   docker compose up --build
+#
+# Services:
+#   backend  — FastAPI on :8000
+#   frontend — Next.js dev server on :3000 (proxies API to backend)
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - UPLOAD_DIR=/app/uploads
+      - CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:8000
+    volumes:
+      - upload_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  upload_data:

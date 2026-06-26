@@ -1,0 +1,50 @@
+# ============================================================
+# Incident Zero — Backend FastAPI service
+# 
+# Render will use this Dockerfile to build the backend service
+# ============================================================
+
+FROM python:3.11-slim
+
+# Security: run as non-root
+RUN groupadd --gid 1001 appuser && \
+    useradd --uid 1001 --gid appuser --create-home appuser
+
+WORKDIR /app
+
+# System deps for Pillow
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libjpeg62-turbo \
+        libpng16-16 \
+        libtiff6 \
+        libwebp7 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python deps
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend source
+COPY backend/ ./backend/
+COPY schemas/ ./schemas/
+COPY fixtures/ ./fixtures/
+
+# Create upload directory
+RUN mkdir -p /app/uploads && chown appuser:appuser /app/uploads
+
+# Environment defaults
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    INCIDENT_ZERO_UPLOAD_DIR=/app/uploads
+
+EXPOSE 8000
+
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

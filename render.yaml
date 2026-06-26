@@ -1,0 +1,43 @@
+services:
+  # Backend FastAPI service
+  - type: web
+    name: incident-zero-backend
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfile: ./Dockerfile
+    dockerContext: .
+    dockerBuildContext: .
+    envVars:
+      - key: MISTRAL_API_KEY
+        sync: false  # Must set manually in Render dashboard
+      - key: INCIDENT_ZERO_UPLOAD_DIR
+        value: /app/uploads
+      - key: CORS_ALLOW_ORIGINS
+        scope: run
+        # Set to: https://{frontend-service-url}.onrender.com after frontend is deployed
+      - key: MISTRAL_TEXT_MODEL
+        value: mistral-large-latest
+      - key: MISTRAL_VISION_MODEL
+        value: mistral-large-latest
+      - key: MISTRAL_OCR_MODEL
+        value: mistral-ocr-latest
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Frontend Next.js service
+  - type: web
+    name: incident-zero-frontend
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfile: ./Dockerfile.frontend
+    dockerContext: .
+    dockerBuildContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        scope: run
+        # Set to: https://{backend-service-url}.onrender.com after backend is deployed
+    autoDeploy: true

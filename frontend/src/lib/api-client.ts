@@ -170,3 +170,20 @@ export function subscribeToJobEvents(
 }
 
 export { ApiError };
+
+// --- Local storage helpers ---
+
+const JOBS_KEY = "incident_zero_jobs";
+
+export function persistJobId(jobId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(JOBS_KEY);
+    const ids: string[] = raw ? JSON.parse(raw) : [];
+    const deduped = ids.filter((id) => id !== jobId);
+    deduped.unshift(jobId);
+    window.localStorage.setItem(JOBS_KEY, JSON.stringify(deduped.slice(0, 50)));
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}

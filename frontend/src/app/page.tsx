@@ -20,14 +20,6 @@ function loadJobIds(): string[] {
   }
 }
 
-/** Save a new job ID to the persisted list (most recent first, max 50). */
-export function persistJobId(jobId: string): void {
-  const ids = loadJobIds().filter((id) => id !== jobId);
-  ids.unshift(jobId);
-  const trimmed = ids.slice(0, 50);
-  window.localStorage.setItem(JOBS_KEY, JSON.stringify(trimmed));
-}
-
 interface JobRow {
   jobId: string;
   status: string;

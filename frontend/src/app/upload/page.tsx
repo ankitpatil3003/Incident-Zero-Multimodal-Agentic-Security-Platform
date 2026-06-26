@@ -2,8 +2,7 @@
 
 import { useState, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { submitAnalysisWithFiles, ApiError } from "@/lib/api-client";
-import { persistJobId } from "@/app/page";
+import { submitAnalysisWithFiles, ApiError, persistJobId } from "@/lib/api-client";
 
 /** Max file size enforced client-side (50 MB, matches backend). */
 const MAX_FILE_SIZE = 50 * 1024 * 1024;

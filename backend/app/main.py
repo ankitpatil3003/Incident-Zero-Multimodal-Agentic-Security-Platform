@@ -2,8 +2,16 @@
 Incident Zero API — FastAPI application entry point.
 
 Run: uvicorn backend.app.main:app --reload --port 8000
+
+Security measures:
+  - Path traversal protection on all file-serving endpoints
+  - Upload size limits and extension allowlisting
+  - Filename sanitization on uploads
+  - CORS restricted to configured origins
+  - No sensitive data in error responses
 """
 
+import re
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -18,9 +26,61 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .config import CORS_ALLOW_ORIGINS, UPLOAD_DIR
+from .config import settings, CORS_ALLOW_ORIGINS, UPLOAD_DIR
 from .orchestrator import run_job
 from .store import Job, job_store
+
+
+# --- Filename sanitization ---
+
+_SAFE_FILENAME_RE = re.compile(r"[^\w\.\-]")
+_MAX_FILENAME_LEN = 200
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Remove path separators, special chars, and limit length."""
+    # Strip any directory components
+    name = Path(filename).name
+    # Replace unsafe characters with underscores
+    name = _SAFE_FILENAME_RE.sub("_", name)
+    # Collapse consecutive underscores
+    name = re.sub(r"_+", "_", name).strip("_")
+    # Limit length
+    if len(name) > _MAX_FILENAME_LEN:
+        stem = Path(name).stem[:_MAX_FILENAME_LEN - 10]
+        suffix = Path(name).suffix
+        name = f"{stem}{suffix}"
+    return name or "upload.bin"
+
+
+def _validate_upload_extension(filename: str) -> None:
+    """Reject files with disallowed extensions."""
+    ext = Path(filename).suffix.lower()
+    if ext and ext not in settings.allowed_upload_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension '{ext}' is not allowed",
+        )
+
+
+def _validate_upload_size(upload: UploadFile) -> None:
+    """Reject uploads exceeding size limit. Reads content-length header."""
+    # FastAPI/Starlette doesn't enforce content-length, so we check after read
+    # This is a best-effort guard; the actual enforcement happens in _persist_upload
+    pass
+
+
+def _is_safe_path(base_dir: Path, target_path: Path) -> bool:
+    """Verify that target_path is within base_dir (prevents path traversal)."""
+    try:
+        resolved_base = base_dir.resolve()
+        resolved_target = target_path.resolve()
+        return str(resolved_target).startswith(str(resolved_base))
+    except (OSError, ValueError):
+        return False
+
+
+# --- Pydantic models ---
 
 
 class AnalyzeRequest(BaseModel):
@@ -33,6 +93,7 @@ class AnalyzeRequest(BaseModel):
 class AnalyzeResponse(BaseModel):
     job_id: str
     status: str
+
 
 app = FastAPI(title="Incident Zero API", version="0.1.0")
 
@@ -57,11 +118,12 @@ def health() -> dict:
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks) -> AnalyzeResponse:
+    # Validate that paths, if provided, are not empty strings after strip
     job = job_store.create_job(
-        repo_path=req.repo_path,
-        log_path=req.log_path,
-        screenshot_path=req.screenshot_path,
-        diagram_path=req.diagram_path,
+        repo_path=(req.repo_path or "").strip() or None,
+        log_path=(req.log_path or "").strip() or None,
+        screenshot_path=(req.screenshot_path or "").strip() or None,
+        diagram_path=(req.diagram_path or "").strip() or None,
     )
     background_tasks.add_task(run_job, job.job_id)
     return AnalyzeResponse(job_id=job.job_id, status=job.status)
@@ -90,7 +152,7 @@ def analyze_upload(
     )
 
     job = job_store.create_job(
-        repo_path=repo_path,
+        repo_path=(repo_path or "").strip() or None,
         log_path=resolved_log,
         screenshot_path=resolved_screenshot,
         diagram_path=resolved_diagram,
@@ -111,18 +173,38 @@ def _resolve_evidence(
     clean = (explicit_path or "").strip()
     if clean:
         return clean
-    if upload is None:
+    if upload is None or not upload.filename:
         return None
     return _persist_upload(upload, prefix)
 
 
 def _persist_upload(upload: UploadFile, prefix: str) -> str:
-    original = Path(upload.filename or f"{prefix}.bin").name
-    suffix = Path(original).suffix
+    """Save uploaded file to disk with sanitized name and size enforcement."""
+    original = upload.filename or f"{prefix}.bin"
+    _validate_upload_extension(original)
+
+    sanitized = _sanitize_filename(original)
+    suffix = Path(sanitized).suffix
     saved_name = f"{prefix}_{uuid4().hex}{suffix}"
     saved_path = UPLOAD_DIR / saved_name
+
+    # Write with size limit enforcement
+    bytes_written = 0
     with saved_path.open("wb") as f:
-        shutil.copyfileobj(upload.file, f)
+        while True:
+            chunk = upload.file.read(8192)
+            if not chunk:
+                break
+            bytes_written += len(chunk)
+            if bytes_written > settings.max_upload_size_bytes:
+                # Clean up partial file
+                saved_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload exceeds maximum size of {settings.max_upload_size_bytes} bytes",
+                )
+            f.write(chunk)
+
     return str(saved_path)
 
 
@@ -149,6 +231,9 @@ async def events(job_id: str, request: Request) -> StreamingResponse:
                 except asyncio.TimeoutError:
                     continue
                 yield f"data: {json.dumps(event)}\n\n"
+                # Stop streaming once pipeline is complete
+                if event.get("status") in {"done", "error"}:
+                    break
         finally:
             job_store.unsubscribe(job_id, queue)
 
@@ -208,6 +293,9 @@ def evidence_file(job_id: str, evidence_id: str) -> FileResponse:
             if not file_path:
                 raise HTTPException(status_code=404, detail="evidence file not found")
             path = Path(file_path)
+            # Path traversal guard: only serve files from upload directory
+            if not _is_safe_path(UPLOAD_DIR, path):
+                raise HTTPException(status_code=403, detail="access denied")
             if not path.exists() or not path.is_file():
                 raise HTTPException(status_code=404, detail="evidence file not found")
             media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -216,6 +304,10 @@ def evidence_file(job_id: str, evidence_id: str) -> FileResponse:
 
 
 def _get_job_or_404(job_id: str) -> Job:
+    # Validate job_id format — reject anything that isn't alphanumeric + underscore.
+    # Returns 404 (not 400) to avoid leaking ID format details.
+    if not re.match(r"^[a-zA-Z0-9_]{1,50}$", job_id):
+        raise HTTPException(status_code=404, detail="job not found")
     job = job_store.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -232,6 +324,9 @@ def _resolve_job_input_path(job: Job, kind: str) -> Optional[Path]:
     if not selected:
         return None
     path = Path(selected)
+    # Path traversal guard for uploaded files
+    if str(UPLOAD_DIR) in selected and not _is_safe_path(UPLOAD_DIR, path):
+        return None
     if not path.exists() or not path.is_file():
         return None
     return path

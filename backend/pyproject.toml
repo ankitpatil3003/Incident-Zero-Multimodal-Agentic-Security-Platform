@@ -1,0 +1,24 @@
+[project]
+name = "incident-zero-backend"
+version = "0.1.0"
+description = "Multimodal Agentic Security Platform — Backend"
+requires-python = ">=3.11"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.flake8]
+max-line-length = 100
+exclude = [".git", "__pycache__", "env", "venv", ".venv"]

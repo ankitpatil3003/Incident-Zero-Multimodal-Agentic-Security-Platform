@@ -36,12 +36,13 @@ User uploads evidence (repo + logs + screenshots + diagrams)
 | Layer | Technology |
 |---|---|
 | Backend | FastAPI, Python 3.11+ |
-| Frontend | Next.js 14, TypeScript, ReactFlow |
+| Frontend | Next.js 15, TypeScript, ReactFlow |
 | AI Provider | Mistral AI (free tier — $0 cost) |
 | Graph Engine | NetworkX |
 | Image Processing | Pillow |
 | Real-time | Server-Sent Events (SSE) |
 | Containerization | Docker, Docker Compose |
+| Deployment | Render (2 services: backend + frontend) |
 
 ## MCP Tools
 
@@ -93,19 +94,55 @@ npm run dev
 
 The frontend runs on `http://localhost:3000` and proxies API calls to the backend on `:8000`.
 
-### Docker
+### Docker (Local)
 
 ```bash
 cp .env.example .env
 # Edit .env to add MISTRAL_API_KEY (optional)
 
-# Single container (backend only)
-docker build -t incident-zero .
-docker run -p 8000:8000 --env-file .env incident-zero
-
 # Full stack (backend + frontend)
 docker compose up --build
 ```
+
+### Production Deployment (Render)
+
+The application is deployed as two separate services on Render:
+
+**Live Deployment:**
+- **Frontend:** https://incident-zero-frontend.onrender.com
+- **Backend:** https://incident-zero-backend.onrender.com
+
+**Setup Steps:**
+
+1. **Create Backend Service on Render**
+   - Connect your GitHub repo
+   - Language: Docker
+   - Dockerfile Path: `./Dockerfile`
+   - Environment Variables:
+     - `MISTRAL_API_KEY`: Get from https://console.mistral.ai/
+     - `INCIDENT_ZERO_UPLOAD_DIR`: `/app/uploads`
+     - `CORS_ALLOW_ORIGINS`: `http://localhost:3000,http://127.0.0.1:3000,https://incident-zero-backend.onrender.com,https://incident-zero-frontend.onrender.com`
+   - Deploy and copy the backend URL
+
+2. **Create Frontend Service on Render**
+   - Connect your GitHub repo
+   - Language: Docker
+   - Dockerfile Path: `./Dockerfile.frontend`
+   - Environment Variables:
+     - `NODE_ENV`: `production`
+     - `NEXT_PUBLIC_API_URL`: Backend service URL from step 1
+   - Deploy
+
+3. **Update Backend CORS (after frontend is live)**
+   - Go to backend service → Environment
+   - Update `CORS_ALLOW_ORIGINS` to include the frontend URL
+   - Save (auto-redeploys)
+
+**Architecture:**
+- Backend FastAPI service runs on port 8000
+- Frontend Next.js service runs on port 3000 (proxy)
+- Both communicate via HTTPS on Render's infrastructure
+- Uploads stored in ephemeral `/app/uploads` directory (lost on restart, acceptable for portfolio demo)
 
 ### Running Tests
 
@@ -130,7 +167,7 @@ All 194+ tests run without external dependencies (Mistral API calls are mocked).
 | `GET` | `/evidence/{job_id}/{evidence_id}` | Serve evidence artifact |
 | `GET` | `/health` | Health check |
 
-### Example: Submit a scan
+### Example: Submit a scan (Local)
 
 ```bash
 curl -X POST http://localhost:8000/analyze \
@@ -143,16 +180,32 @@ Response:
 {"job_id": "job_a1b2c3d4", "status": "running"}
 ```
 
+### Example: Submit a scan (Production)
+
+```bash
+curl -X POST https://incident-zero-backend.onrender.com/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"repo_path": "/path/to/repo", "log_path": "/path/to/app.log"}'
+```
+
 ### Example: Stream events
 
 ```bash
+# Local
 curl -N http://localhost:8000/events/job_a1b2c3d4
+
+# Production
+curl -N https://incident-zero-backend.onrender.com/events/job_a1b2c3d4
 ```
 
 ### Example: Get results
 
 ```bash
+# Local
 curl http://localhost:8000/result/job_a1b2c3d4
+
+# Production
+curl https://incident-zero-backend.onrender.com/result/job_a1b2c3d4
 ```
 
 ## Project Structure

@@ -39,13 +39,9 @@ _MAX_FILENAME_LEN = 200
 
 def _sanitize_filename(filename: str) -> str:
     """Remove path separators, special chars, and limit length."""
-    # Strip any directory components
     name = Path(filename).name
-    # Replace unsafe characters with underscores
     name = _SAFE_FILENAME_RE.sub("_", name)
-    # Collapse consecutive underscores
     name = re.sub(r"_+", "_", name).strip("_")
-    # Limit length
     if len(name) > _MAX_FILENAME_LEN:
         stem = Path(name).stem[:_MAX_FILENAME_LEN - 10]
         suffix = Path(name).suffix
@@ -64,9 +60,7 @@ def _validate_upload_extension(filename: str) -> None:
 
 
 def _validate_upload_size(upload: UploadFile) -> None:
-    """Reject uploads exceeding size limit. Reads content-length header."""
-    # FastAPI/Starlette doesn't enforce content-length, so we check after read
-    # This is a best-effort guard; the actual enforcement happens in _persist_upload
+    """Reject uploads exceeding size limit."""
     pass
 
 
@@ -118,7 +112,6 @@ def health() -> dict:
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks) -> AnalyzeResponse:
-    # Validate that paths, if provided, are not empty strings after strip
     job = job_store.create_job(
         repo_path=(req.repo_path or "").strip() or None,
         log_path=(req.log_path or "").strip() or None,
@@ -188,7 +181,6 @@ def _persist_upload(upload: UploadFile, prefix: str) -> str:
     saved_name = f"{prefix}_{uuid4().hex}{suffix}"
     saved_path = UPLOAD_DIR / saved_name
 
-    # Write with size limit enforcement
     bytes_written = 0
     with saved_path.open("wb") as f:
         while True:
@@ -197,7 +189,6 @@ def _persist_upload(upload: UploadFile, prefix: str) -> str:
                 break
             bytes_written += len(chunk)
             if bytes_written > settings.max_upload_size_bytes:
-                # Clean up partial file
                 saved_path.unlink(missing_ok=True)
                 raise HTTPException(
                     status_code=413,
@@ -218,11 +209,9 @@ async def events(job_id: str, request: Request) -> StreamingResponse:
 
     async def stream():
         try:
-            # Replay existing timeline events first
             for event in job.timeline:
                 yield f"data: {json.dumps(event)}\n\n"
 
-            # Then stream new events as they arrive
             while True:
                 if await request.is_disconnected():
                     break
@@ -231,7 +220,6 @@ async def events(job_id: str, request: Request) -> StreamingResponse:
                 except asyncio.TimeoutError:
                     continue
                 yield f"data: {json.dumps(event)}\n\n"
-                # Stop streaming once pipeline is complete
                 if event.get("status") in {"done", "error"}:
                     break
         finally:
@@ -293,7 +281,6 @@ def evidence_file(job_id: str, evidence_id: str) -> FileResponse:
             if not file_path:
                 raise HTTPException(status_code=404, detail="evidence file not found")
             path = Path(file_path)
-            # Path traversal guard: only serve files from upload directory
             if not _is_safe_path(UPLOAD_DIR, path):
                 raise HTTPException(status_code=403, detail="access denied")
             if not path.exists() or not path.is_file():
@@ -304,8 +291,6 @@ def evidence_file(job_id: str, evidence_id: str) -> FileResponse:
 
 
 def _get_job_or_404(job_id: str) -> Job:
-    # Validate job_id format — reject anything that isn't alphanumeric + underscore.
-    # Returns 404 (not 400) to avoid leaking ID format details.
     if not re.match(r"^[a-zA-Z0-9_]{1,50}$", job_id):
         raise HTTPException(status_code=404, detail="job not found")
     job = job_store.get_job(job_id)
@@ -324,7 +309,6 @@ def _resolve_job_input_path(job: Job, kind: str) -> Optional[Path]:
     if not selected:
         return None
     path = Path(selected)
-    # Path traversal guard for uploaded files
     if str(UPLOAD_DIR) in selected and not _is_safe_path(UPLOAD_DIR, path):
         return None
     if not path.exists() or not path.is_file():
